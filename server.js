@@ -1,11 +1,12 @@
 'use strict';
 
+require('dotenv').config();
 var express     = require('express');
 var bodyParser  = require('body-parser');
 var cors        = require('cors');
 var helmet      = require('helmet');
-
-var apiRoutes         = require('./routes/api.js');
+var apiRoutes   = require('./routes/api.js');
+var expect  = require("chai").expect;
 
 var app = express();
 
@@ -43,5 +44,8 @@ app.use(function(req, res, next) {
 
 //Start our server and tests!
 app.listen(process.env.PORT || 3000, function () {
-  console.log("Listening on port " + process.env.PORT);
+  console.log("Listening on port " + (process.env.PORT || 3000));
 });
+
+
+module.exports = app; //for testing
