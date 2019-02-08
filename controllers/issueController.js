@@ -22,37 +22,33 @@ exports.postIssue = function (req, res) {
       data.created_by === undefined ) {
    
    res.status(200).send({ failure: 'Missing required info' });
+   return;
 
   } else {
-    MongoClient.connect(CONNECTION_STRING, (err, db) => {
 
-      if(err) {
-        res.status(500).send({ status: 'Database not available.'});
-        console.dir(err);
+    MongoClient.connect(CONNECTION_STRING)
+      .then( db => {
+        return db.collection('better_projects');
 
-        return;
-      }
+      })
+      .then( projectsCollection => {
+        return projectsCollection.findOneAndUpdate(
+          { name: projectName },
+          { $push: { issues: data }},
+          { upsert: true, returnOriginal: false })
 
-      let projectsCollection = db.collection('better_projects');
+      })
+      .then( doc => {
+        res.status(200).send(doc.value.issues[doc.value.issues.length -1]);
+        return doc.value;
 
-      projectsCollection.findOneAndUpdate(
-        { name: projectName },
-        { $push: { issues: data }},
-        { upsert: true, returnOriginal: false },
-        (err, doc) => {
-          if(err) {
-            
-            console.log('error inserting ', err);
-            res.status(500).send({status: 'Database error.'})
-            return;
-          }
-
-          res.status(200).send(doc.value.issues[doc.value.issues.length -1]);
-
-        });
-    })
+      })
+      .catch ( err => {
+        console.log('error ', err);
+        res.status(500).send({status: 'Database error.'})
+      });
   }
-  }
+}
 
 exports.updateIssue = function (req, res) {
   const projectName = req.params.project;
@@ -72,44 +68,34 @@ exports.updateIssue = function (req, res) {
     return;  
   }
 
-  MongoClient.connect(CONNECTION_STRING, (err, db) => {
+  let setQuery = {};
+  const queryConst = "issues.$";
 
-    if(err) {
-      res.status(500).send({ status: 'Database not available.'});
-      console.dir(err);
-
-      return;
-    }
-
-    let projectsCollection = db.collection('better_projects');
-
-    let setQuery = {};
-    const queryConst = "issues.$";
-
-    data.updated_on =  new Date();
-    
-    for(let key in data) {
-      setQuery[queryConst + "." + key] = data[key];
-    }
-
-    projectsCollection.updateOne(
-      { name: projectName, "issues._id": new ObjectID(_id) },
-      { $set: { ...setQuery }},
-      { upsert: true },
-      (err, doc) => {
-        if(err) {
-          
-          console.log('error inserting ', err);
-          res.status(500).send({status: 'Database error.'})
-          return;
-        }
-        
-        res.status(200).send('successfully updated');
-
-      });
-  });
+  data.updated_on =  new Date();
+  
+  for(let key in data) {
+    setQuery[queryConst + "." + key] = data[key];
   }
-      
+
+  MongoClient.connect(CONNECTION_STRING)
+    .then( db => {
+      return db.collection('better_projects');
+    })
+    .then( projectsCollection => {
+      return projectsCollection.updateOne(
+        { name: projectName, "issues._id": new ObjectID(_id) },
+        { $set: { ...setQuery }},
+        { upsert: true })
+      })
+      .then( doc => {
+        res.status(200).send('successfully updated');
+        return;
+      })
+      .catch( err => {
+        console.log('error inserting ', err);
+        res.status(500).send({status: 'Database error.'})
+      });
+}   
   
 exports.deleteIssue = function (req, res) {
 
@@ -121,31 +107,25 @@ exports.deleteIssue = function (req, res) {
     return;
   }
 
-  MongoClient.connect(CONNECTION_STRING, (err, db) => {
-
-    if(err) {
-      res.status(500).send({ status: 'Database not available.'});
-      console.dir(err);
-
+  MongoClient.connect(CONNECTION_STRING)
+    .then( db => {
+      return db.collection('better_projects');
+    })
+    .then (projectsCollection => {
+      return projectsCollection.updateOne(
+        { name: projectName }, 
+        { $pull: { issues: { _id: new ObjectID(_id)}}}
+      );
+    })
+    .then( result => {
+      res.status(200).send('deleted ' + _id);
       return;
-    }
 
-    let projectsCollection = db.collection('better_projects');
-
-    projectsCollection.deleteOne(
-      { name: projectName, "issues._id": new ObjectID(_id) },
-      (err, result) => {
-        if(err) {
-          
-          console.log('error deletting ', err);
-          res.status(500).send({status: 'Database error.'})
-          return;
-        }
-        
-        res.status(200).send('deleted ' + _id);
-
-      });
-  });
+    })
+    .catch( err => {
+      console.log('error deletting ', err);
+      res.status(500).send({status: 'Database error.'})
+    });
 }
 
 
@@ -162,33 +142,32 @@ exports.getIssues = function(req, res) {
     }
   }
 
-  MongoClient.connect(CONNECTION_STRING, (err, db) => {
+  MongoClient.connect(CONNECTION_STRING)
+    .then( db => {
+      return db.collection('better_projects');
+    })
+    .then( projectsCollection => {
+      return projectsCollection.find({name: projectName});
+    })
+    .then( result => {
+      return result.toArray();
+    })
+    .then( array => {
 
-    if(err) {
-      res.status(500).send({ status: 'Database not available.'});
-      console.dir(err);
-
-      return;
-    }
-
-    let projectsCollection = db.collection('better_projects');
-
-    projectsCollection.find(
-      {name: projectName},
-      {issues: { $elemMatch: query}},
-      (err, result) => {
-        
-        if(err) {
-          
-          console.log('find error', err);
-          res.status(500).send({status: 'Database error.'})
-          return;
+      let filteredArray = array[0].issues.filter( element => {
+        for (key in query) {
+          if( !(element[key] == query[key])) {
+            return false;
+          }
         }
-
-        result.toArray( (err, arr) => {
-          res.status(200).send(arr[0].issues);
-        });
-        
+        return true;
       });
-  });
+
+      res.status(200).send(filteredArray);
+      
+    })
+    .catch( err => {
+      console.log('find error', err);
+      res.status(500).send({status: 'Database error.'})
+    });
 }
